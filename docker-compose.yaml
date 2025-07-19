@@ -1,0 +1,9 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+  valkey:
+    image: valkey/valkey
+    ports:
+      - "6380:6379"

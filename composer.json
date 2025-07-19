@@ -1,0 +1,50 @@
+{
+  "name": "alsc/streambus",
+  "description": "Redis Streams message bus",
+  "version": "0.1",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [ "redis", "stream", "message", "message bus", "event bus", "queue"],
+  "authors": [
+    {
+      "name": "Alexander Schastny",
+      "email": "al.schastny@gmail.com"
+    }
+  ],
+  "require": {
+    "php": ">=8.2",
+    "predis/predis": "^3.1|dev-main",
+    "psr/log": "^1.1|^2|^3"
+  },
+  "require-dev": {
+    "friendsofphp/php-cs-fixer": "^3.75",
+    "monolog/monolog": "*",
+    "phpunit/phpunit": "^11.4",
+    "psalm/phar": "^6.12",
+    "symfony/process": "^7.3"
+  },
+  "autoload": {
+    "psr-4": {
+      "StreamBus\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "StreamBus\\": "tests"
+    }
+  },
+  "config": {
+    "sort-packages": true
+  },
+  "scripts": {
+    "psalm": "psalm.phar --config=psalm.xml --no-cache",
+    "style": "php-cs-fixer fix --diff --dry-run",
+    "style:fix": "php-cs-fixer fix",
+    "test": [
+      "REDIS_RESP_VERSION=2 XDEBUG_MODE=coverage phpunit --testsuite main --coverage-html ./html-coverage",
+      "REDIS_RESP_VERSION=3 phpunit --testsuite main"
+    ],
+    "test:benchmark": "phpunit --testsuite benchmark",
+    "test:parallel": "phpunit --testsuite parallel"
+  }
+}

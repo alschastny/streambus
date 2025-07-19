@@ -1,0 +1,7 @@
+html-coverage
+vendor
+.idea
+.phpunit.result.cache
+.php-cs-fixer.cache
+composer.lock
+docker-compose.override.yaml
