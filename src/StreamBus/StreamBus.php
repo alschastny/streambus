@@ -318,8 +318,8 @@ final class StreamBus implements StreamBusInterface
     {
         !$this->settings->ackExplicit && throw new StreamBusException('no ack mode enabled');
 
-        if ($nackDelayMs > $this->settings->nackDelayMs) {
-            throw new StreamBusException('nackDelay > nackWaitMs');
+        if ($nackDelayMs > $this->settings->ackWaitMs) {
+            throw new StreamBusException('nackDelay > ackWaitMs');
         }
 
         $this->checkSubject($subject);

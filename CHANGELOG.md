@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.1
+
+### Fixed
+
+- `nack()` now correctly validates that the per-call `$nackDelayMs` does not exceed `ackWaitMs` (was incorrectly compared against `nackDelayMs`).
+
 ## v0.2.0
 
 ### Added
