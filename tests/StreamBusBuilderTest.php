@@ -38,7 +38,7 @@ class StreamBusBuilderTest extends TestCase
         $this->assertInstanceOf(StreamBusInfo::class, $builder->createBusInfo());
         $this->assertInstanceOf(StreamBusInfo::class, $builder->createDLQBusInfo());
 
-        $this->assertInstanceOf(StreamBusProducer::class, $builder->createProducer());
+        $this->assertInstanceOf(StreamBusProducer::class, $builder->createProducer('producer'));
         $this->assertInstanceOf(StreamBusConsumer::class, $builder->createConsumer('group', 'consumer'));
         $this->assertInstanceOf(StreamBusProcessor::class, $builder->createProcessor(
             'group',

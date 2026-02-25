@@ -25,6 +25,9 @@ final class StreamBus implements StreamBusInterface
     /** @var callable|null $maxAttemptsProcessor */
     private $maxAttemptsProcessor = null;
 
+    private ?bool $supportsDeleteModes = null;  // Redis >= 8.2
+    private ?bool $supportsIdempotency = null;  // Redis >= 8.6
+
     public function __construct(
         string $name,
         private Client $client,
@@ -40,11 +43,11 @@ final class StreamBus implements StreamBusInterface
     {
         $this->maxSizeOperator = $this->settings->exactLimits ? '=' : '~';
         if ($this->settings->minTTLSec && $this->settings->maxSize) {
-            $this->addMethod = fn($subject, $item) => $this->addWithTact($subject, $item);
+            $this->addMethod = fn($subject, $item, $producerId) => $this->addWithTact($subject, $item, $producerId);
         } elseif ($this->settings->minTTLSec) {
-            $this->addMethod = fn($subject, $item) => $this->addWithTTL($subject, $item);
+            $this->addMethod = fn($subject, $item, $producerId) => $this->addWithTTL($subject, $item, $producerId);
         } else {
-            $this->addMethod = fn($subject, $item) => $this->addWithSize($subject, $item);
+            $this->addMethod = fn($subject, $item, $producerId) => $this->addWithSize($subject, $item, $producerId);
         }
     }
 
@@ -107,14 +110,76 @@ final class StreamBus implements StreamBusInterface
         return $this->serializers[$subject]->unserialize($item);
     }
 
-    public function add(string $subject, mixed $item): string
+    private function redisVersion(): string
+    {
+        $info = $this->client->info('server');
+        return $info['Server']['redis_version'] ?? $info['redis_version'] ?? '0.0.0';
+    }
+
+    private static function compareVersion(string $a, string $b): int
+    {
+        $aParts = explode('.', $a);
+        $bParts = explode('.', $b);
+        $len = max(count($aParts), count($bParts));
+        for ($i = 0; $i < $len; $i++) {
+            $diff = (int) ($aParts[$i] ?? 0) <=> (int) ($bParts[$i] ?? 0);
+            if ($diff !== 0) {
+                return $diff;
+            }
+        }
+        return 0;
+    }
+
+    public function checkDeleteModesSupport(): bool
+    {
+        return $this->supportsDeleteModes ??= self::compareVersion($this->redisVersion(), '8.2.0') >= 0;
+    }
+
+    public function checkIdmpSupport(): bool
+    {
+        return $this->supportsIdempotency ??= self::compareVersion($this->redisVersion(), '8.6.0') >= 0;
+    }
+
+    private function buildXaddOptions(array $trimArgs, ?string $idempotentId, string $producerId): array
+    {
+        $options = $trimArgs ? ['trim' => $trimArgs] : [];
+
+        if ($this->checkDeleteModesSupport()) {
+            $options['trimming'] = $this->settings->deletePolicy->value;
+        }
+
+        if ($this->settings->idmpMode === IdmpMode::None) {
+            return $options;
+        }
+
+        if (!$this->checkIdmpSupport()) {
+            throw new StreamBusException('Redis server does not support idempotency (requires 8.6+)');
+        }
+
+        if ($producerId === '') {
+            throw new StreamBusException('producer Id is required in Explicit or Auto IDMP mode');
+        }
+
+        if ($this->settings->idmpMode === IdmpMode::Auto) {
+            return $options + ['idmpauto' => $producerId];
+        }
+
+        return $options + [
+            'idmp' => [
+                $producerId,
+                $idempotentId ?? throw new StreamBusException('idempotentId is required in Explicit IDMP mode'),
+            ],
+        ];
+    }
+
+    public function add(string $subject, mixed $item, string $producerId = ''): string
     {
         $this->checkSubject($subject);
 
-        return ($this->addMethod)($subject, $item);
+        return ($this->addMethod)($subject, $item, $producerId);
     }
 
-    public function addMany(string $subject, array $items): array
+    public function addMany(string $subject, array $items, string $producerId = ''): array
     {
         $this->checkSubject($subject);
 
@@ -123,68 +188,107 @@ final class StreamBus implements StreamBusInterface
         }
 
         $lastKey = $penultimateKey = null;
-        $addOptionsPenultimate = [];
+        $penultimateTrimArgs = [];
         if ($this->settings->maxSize && $this->settings->minTTLSec) {
             if (count($items) >= 2) {
                 /** @psalm-suppress PossiblyUndefinedArrayOffset */
                 [$penultimateKey, $lastKey] = array_slice(array_keys($items), -2, 2);
-                $addOptions = ['trim' => ['MINID', $this->maxSizeOperator, ($this->client->time()[0] - $this->settings->minTTLSec) * 1000]];
-                $addOptionsPenultimate = ['trim' => ['MAXLEN', $this->maxSizeOperator, $this->settings->maxSize]];
+                $lastTrimArgs = ['MINID', $this->maxSizeOperator, ($this->client->time()[0] - $this->settings->minTTLSec) * 1000];
+                $penultimateTrimArgs = ['MAXLEN', $this->maxSizeOperator, $this->settings->maxSize];
             } else {
                 $lastKey = array_key_last($items);
-                $addOptions = ($this->tact = !$this->tact)
-                    ? ['trim' => ['MINID', $this->maxSizeOperator, ($this->client->time()[0] - $this->settings->minTTLSec) * 1000]]
-                    : ['trim' => ['MAXLEN', $this->maxSizeOperator, $this->settings->maxSize]];
+                $lastTrimArgs = ($this->tact = !$this->tact)
+                    ? ['MINID', $this->maxSizeOperator, ($this->client->time()[0] - $this->settings->minTTLSec) * 1000]
+                    : ['MAXLEN', $this->maxSizeOperator, $this->settings->maxSize];
             }
         } elseif ($this->settings->maxSize) {
-            $addOptions = ['trim' => ['MAXLEN', $this->maxSizeOperator, $this->settings->maxSize]];
+            $lastTrimArgs = ['MAXLEN', $this->maxSizeOperator, $this->settings->maxSize];
         } else {
-            $addOptions = ['trim' => ['MINID', $this->maxSizeOperator, ($this->client->time()[0] - $this->settings->minTTLSec) * 1000]];
+            $lastTrimArgs = ['MINID', $this->maxSizeOperator, ($this->client->time()[0] - $this->settings->minTTLSec) * 1000];
         }
 
-
-        $ids = $this->client->pipeline(function ($pipe) use ($items, $lastKey, $penultimateKey, $addOptionsPenultimate, $addOptions, $subject): void {
+        $ids = $this->client->pipeline(function ($pipe) use ($items, $lastKey, $penultimateKey, $penultimateTrimArgs, $lastTrimArgs, $subject, $producerId): void {
             $streamKey = $this->createStreamKey($subject);
             if ($lastKey === null) {
                 $lastKey = array_key_last($items);
             }
             foreach ($items as $key => $item) {
-                match ($key) {
-                    $penultimateKey => $pipe->xadd($streamKey, $this->serialize($subject, $item), '*', $addOptionsPenultimate),
-                    $lastKey => $pipe->xadd($streamKey, $this->serialize($subject, $item), '*', $addOptions),
-                    default => $pipe->xadd($streamKey, $this->serialize($subject, $item), '*'),
+                if ($item instanceof StreamBusMessage) {
+                    $idempotentId = $item->idempotentId;
+                    $entryId = $item->id ?? '*';
+                    $item = $item->item;
+                } else {
+                    $entryId = '*';
+                    $idempotentId = null;
+                }
+                $trimArgs = match ($key) {
+                    $penultimateKey => $penultimateTrimArgs,
+                    $lastKey => $lastTrimArgs,
+                    default => [],
                 };
+                $pipe->xadd(
+                    $streamKey,
+                    $this->serialize($subject, $item),
+                    $entryId,
+                    $this->buildXaddOptions($trimArgs, $idempotentId, $producerId),
+                );
             }
         });
 
         return array_map(static fn($id) => (string) $id, (array) $ids);
     }
 
-    private function addWithTTL(string $subject, mixed $item): string
+    private function addWithTTL(string $subject, mixed $item, string $producerId): string
     {
+        if ($item instanceof StreamBusMessage) {
+            $idempotentId = $item->idempotentId;
+            $entryId = $item->id ?? '*';
+            $item = $item->item;
+        } else {
+            $entryId = '*';
+            $idempotentId = null;
+        }
+
         return (string) $this->client->xadd(
             $this->createStreamKey($subject),
             $this->serialize($subject, $item),
-            '*',
-            ['trim' => ['MINID', $this->maxSizeOperator, ($this->client->time()[0] - $this->settings->minTTLSec) * 1000]],
+            $entryId,
+            $this->buildXaddOptions(
+                ['MINID', $this->maxSizeOperator, ($this->client->time()[0] - $this->settings->minTTLSec) * 1000],
+                $idempotentId,
+                $producerId,
+            ),
         );
     }
 
-    private function addWithSize(string $subject, mixed $item): string
+    private function addWithSize(string $subject, mixed $item, string $producerId): string
     {
+        if ($item instanceof StreamBusMessage) {
+            $idempotentId = $item->idempotentId;
+            $entryId = $item->id ?? '*';
+            $item = $item->item;
+        } else {
+            $entryId = '*';
+            $idempotentId = null;
+        }
+
         return (string) $this->client->xadd(
             $this->createStreamKey($subject),
             $this->serialize($subject, $item),
-            '*',
-            ['trim' => ['MAXLEN', $this->maxSizeOperator, $this->settings->maxSize]],
+            $entryId,
+            $this->buildXaddOptions(
+                ['MAXLEN', $this->maxSizeOperator, $this->settings->maxSize],
+                $idempotentId,
+                $producerId,
+            ),
         );
     }
 
-    private function addWithTact(string $subject, mixed $item): string
+    private function addWithTact(string $subject, mixed $item, string $producerId): string
     {
         return ($this->tact = !$this->tact)
-            ? $this->addWithTTL($subject, $item)
-            : $this->addWithSize($subject, $item);
+            ? $this->addWithTTL($subject, $item, $producerId)
+            : $this->addWithSize($subject, $item, $producerId);
     }
 
     public function ack(string $group, string $subject, string ...$ids): int
@@ -193,6 +297,14 @@ final class StreamBus implements StreamBusInterface
         $this->checkSubject($subject);
 
         $key = $this->createStreamKey($subject);
+
+        if ($this->settings->deleteOnAck && $this->checkDeleteModesSupport()) {
+            return count(array_filter(
+                $this->client->xackdel($key, $group, $this->settings->deletePolicy->value, $ids),
+                fn(int $v) => $v > 0,
+            ));
+        }
+
         $result = $this->client->xack($key, $group, ...$ids);
 
         if ($this->settings->deleteOnAck) {
@@ -365,8 +477,23 @@ final class StreamBus implements StreamBusInterface
                 return false;
                 // @codeCoverageIgnoreEnd
             }
+            $this->applyIdmpConfig($key);
         }
 
         return true;
+    }
+
+    private function applyIdmpConfig(string $streamKey): void
+    {
+        if ($this->settings->idmpMode === IdmpMode::None || !$this->checkIdmpSupport()) {
+            return;
+        }
+
+        $duration = $this->settings->idmpDurationSec > 0 ? $this->settings->idmpDurationSec : null;
+        $maxSize = $this->settings->idmpMaxSize > 0 ? $this->settings->idmpMaxSize : null;
+
+        if ($duration !== null || $maxSize !== null) {
+            $this->client->xcfgset($streamKey, $duration, $maxSize);
+        }
     }
 }

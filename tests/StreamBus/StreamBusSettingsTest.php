@@ -27,6 +27,8 @@ class StreamBusSettingsTest extends TestCase
             'nackDelayMs greater than ackWaitMs' => [['nackDelayMs' => 10000, 'ackWaitMs' => 5000]],
             'negative maxExpiredSubjects' => [['maxExpiredSubjects' => -1]],
             'both ackExplicit and deleteOnAck' => [['ackExplicit' => false, 'deleteOnAck' => true]],
+            'negative idmpDurationSec' => [['idmpDurationSec' => -1]],
+            'negative idmpMaxSize' => [['idmpMaxSize' => -1]],
         ];
     }
 }

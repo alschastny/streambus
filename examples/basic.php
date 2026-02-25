@@ -28,7 +28,7 @@ $builder = StreamBusBuilder::create('basic')
     ->withSerializers($serializers);
 
 // Produce messages
-$producer = $builder->createProducer();
+$producer = $builder->createProducer('producer');
 $producer->add('users.new', ['id' => 1, 'name' => 'David']);
 $producer->add('users.new', ['id' => 2, 'name' => 'Andrew']);
 $producer->add('products.new', ['id' => 1, 'product' => 'guitar']);

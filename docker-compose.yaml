@@ -1,9 +1,29 @@
 services:
-  redis:
-    image: redis:7-alpine
+  redis_72:
+    image: redis:7.2-alpine
     ports:
-      - "6379:6379"
+      - "6372:6379"
+  redis_74:
+    image: redis:7.4-alpine
+    ports:
+      - "6374:6379"
+  redis_80:
+    image: redis:8.0-alpine
+    ports:
+      - "6380:6379"
+  redis_82:
+    image: redis:8.2-alpine
+    ports:
+      - "6382:6379"
+  redis_84:
+    image: redis:8.4-alpine
+    ports:
+      - "6384:6379"
+  redis_86:
+    image: redis:8.6-alpine
+    ports:
+      - "6386:6379"
   valkey:
     image: valkey/valkey
     ports:
-      - "6380:6379"
+      - "6390:6379"

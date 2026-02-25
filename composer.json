@@ -1,7 +1,7 @@
 {
   "name": "alsc/streambus",
   "description": "Redis Streams message bus",
-  "version": "0.1",
+  "version": "0.2",
   "type": "library",
   "license": "MIT",
   "keywords": [ "redis", "stream", "message", "message bus", "event bus", "queue"],
@@ -13,7 +13,7 @@
   ],
   "require": {
     "php": ">=8.2",
-    "predis/predis": "^3.1|dev-main",
+    "predis/predis": "^3.4",
     "psr/log": "^1.1|^2|^3"
   },
   "require-dev": {
@@ -35,16 +35,5 @@
   },
   "config": {
     "sort-packages": true
-  },
-  "scripts": {
-    "psalm": "psalm.phar --config=psalm.xml --no-cache",
-    "style": "php-cs-fixer fix --diff --dry-run",
-    "style:fix": "php-cs-fixer fix",
-    "test": [
-      "REDIS_RESP_VERSION=2 XDEBUG_MODE=coverage phpunit --testsuite main --coverage-html ./html-coverage",
-      "REDIS_RESP_VERSION=3 phpunit --testsuite main"
-    ],
-    "test:benchmark": "phpunit --testsuite benchmark",
-    "test:parallel": "phpunit --testsuite parallel"
   }
 }

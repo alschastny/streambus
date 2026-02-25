@@ -39,7 +39,7 @@ class StreamBusProducerTest extends TestCase
             ]);
 
         $this->info = $builder->createBusInfo();
-        $this->producer = $builder->createProducer();
+        $this->producer = $builder->createProducer('producer');
     }
 
     public function testAdd(): void

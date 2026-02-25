@@ -82,7 +82,7 @@ $builder = StreamBusBuilder::create('basic_oop')
     ->withSerializers($serializers);
 
 // Produce messages
-$producer = $builder->createProducer();
+$producer = $builder->createProducer('producer');
 $producer->add('users.new', new User(1, 'David'));
 $producer->add('users.new', new User(2, 'Andrew'));
 $producer->add('products.new', new Product(1, 'guitar'));

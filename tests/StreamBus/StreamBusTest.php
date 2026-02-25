@@ -286,6 +286,108 @@ class StreamBusTest extends TestCase
         $this->assertSame(0, $this->info->getGroupPending('group2', 'subject_a'));
     }
 
+    public function testDeletePolicyKeepRef(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 1000,
+            exactLimits: true,
+            deleteOnAck: true,
+            deletePolicy: DeleteMode::KeepRef,
+            ackWaitMs: 30 * 60 * 1000,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkDeleteModesSupport()) {
+            $this->markTestSkipped('Redis >= 8.2 required for delete modes');
+        }
+
+        $msg = ['k1' => 'v1'];
+        $id = $this->bus->add('subject_a', $msg);
+
+        // Both groups read the message so both have it in their PEL
+        $this->bus->readNew('group1', 'consumer1', 1);
+        $this->bus->readNew('group2', 'consumer1', 1);
+
+        // KeepRef: message is deleted from stream, group1 PEL ref removed,
+        // but group2's PEL reference is preserved
+        $this->assertSame(1, $this->bus->ack('group1', 'subject_a', $id));
+        $this->assertSame(0, $this->info->getStreamLength('subject_a'));
+        $this->assertSame(0, $this->info->getGroupPending('group1', 'subject_a'));
+        $this->assertSame(1, $this->info->getGroupPending('group2', 'subject_a'));
+        // group2 still has the entry in PEL but the data was deleted from stream
+        $this->assertSame(
+            ['subject_a' => [$id => null]],
+            $this->bus->readPending('group2', 'consumer1', 1, null)[0],
+        );
+    }
+
+    public function testDeletePolicyDelRef(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 1000,
+            exactLimits: true,
+            deleteOnAck: true,
+            deletePolicy: DeleteMode::DelRef,
+            ackWaitMs: 30 * 60 * 1000,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkDeleteModesSupport()) {
+            $this->markTestSkipped('Redis >= 8.2 required for delete modes');
+        }
+
+        $msg = ['k1' => 'v1'];
+        $id = $this->bus->add('subject_a', $msg);
+
+        // Both groups read the message so both have it in their PEL
+        $this->bus->readNew('group1', 'consumer1', 1);
+        $this->bus->readNew('group2', 'consumer1', 1);
+
+        // DelRef: message is deleted from stream AND all PEL references are removed,
+        // including group2's PEL entry
+        $this->assertSame(1, $this->bus->ack('group1', 'subject_a', $id));
+        $this->assertSame(0, $this->info->getStreamLength('subject_a'));
+        $this->assertSame(0, $this->info->getGroupPending('group1', 'subject_a'));
+        $this->assertSame(0, $this->info->getGroupPending('group2', 'subject_a'));
+    }
+
+    public function testDeletePolicyAcked(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 1000,
+            exactLimits: true,
+            deleteOnAck: true,
+            deletePolicy: DeleteMode::Acked,
+            ackWaitMs: 30 * 60 * 1000,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkDeleteModesSupport()) {
+            $this->markTestSkipped('Redis >= 8.2 required for delete modes');
+        }
+
+        $msg = ['k1' => 'v1'];
+        $id = $this->bus->add('subject_a', $msg);
+
+        // Both groups read the message so both have it in their PEL
+        $this->bus->readNew('group1', 'consumer1', 1);
+        $this->bus->readNew('group2', 'consumer1', 1);
+
+        // Acked: group1 acks but message stays in stream because group2 hasn't acked yet
+        $this->assertSame(1, $this->bus->ack('group1', 'subject_a', $id));
+        $this->assertSame(1, $this->info->getStreamLength('subject_a'));
+        $this->assertSame(0, $this->info->getGroupPending('group1', 'subject_a'));
+        $this->assertSame(1, $this->info->getGroupPending('group2', 'subject_a'));
+
+        // group2 acks — now all groups have acked, message is deleted from stream
+        $this->assertSame(1, $this->bus->ack('group2', 'subject_a', $id));
+        $this->assertSame(0, $this->info->getStreamLength('subject_a'));
+        $this->assertSame(0, $this->info->getGroupPending('group2', 'subject_a'));
+    }
+
     public function testAddNackRead(): void
     {
         $msg = ['k1' => 'v1'];
@@ -641,6 +743,214 @@ class StreamBusTest extends TestCase
         $this->assertTrue($this->bus->createGroup('test_group'));
         $this->expectException(StreamBusException::class);
         $this->bus->createGroup('');
+    }
+
+    public function testAddIdmpAutoDeduplicates(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 100,
+            idmpMode: IdmpMode::Auto,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkIdmpSupport()) {
+            $this->markTestSkipped('Redis >= 8.6 required for idempotency');
+        }
+
+        $msg = ['k' => 'v'];
+        $id1 = $this->bus->add('subject_a', $msg, 'test-producer');
+        $id2 = $this->bus->add('subject_a', $msg, 'test-producer');
+        $this->assertSame($id1, $id2);
+        $this->assertSame(1, $this->info->getStreamLength('subject_a'));
+    }
+
+    public function testAddIdmpAutoManyDeduplicates(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 100,
+            idmpMode: IdmpMode::Auto,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkIdmpSupport()) {
+            $this->markTestSkipped('Redis >= 8.6 required for idempotency');
+        }
+
+        $msgs = ['a' => ['k' => 'v1'], 'b' => ['k' => 'v2']];
+        $ids1 = $this->bus->addMany('subject_a', $msgs, 'test-producer');
+        $ids2 = $this->bus->addMany('subject_a', $msgs, 'test-producer');
+        $this->assertSame($ids1, $ids2);
+        $this->assertSame(2, $this->info->getStreamLength('subject_a'));
+    }
+
+    public function testAddIdmpExplicitDeduplicates(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 100,
+            idmpMode: IdmpMode::Explicit,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkIdmpSupport()) {
+            $this->markTestSkipped('Redis >= 8.6 required for idempotency');
+        }
+
+        $msg = ['k' => 'v'];
+        $iid = 'unique-message-id';
+        $id1 = $this->bus->add('subject_a', new StreamBusMessage($msg, null, $iid), 'test-producer');
+        $id2 = $this->bus->add('subject_a', new StreamBusMessage($msg, null, $iid), 'test-producer');
+        $this->assertSame($id1, $id2);
+        $this->assertSame(1, $this->info->getStreamLength('subject_a'));
+    }
+
+    public function testAddIdmpExplicitDifferentIids(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 100,
+            idmpMode: IdmpMode::Explicit,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkIdmpSupport()) {
+            $this->markTestSkipped('Redis >= 8.6 required for idempotency');
+        }
+
+        $msg = ['k' => 'v'];
+        $id1 = $this->bus->add('subject_a', new StreamBusMessage($msg, null, 'iid-1'), 'test-producer');
+        $id2 = $this->bus->add('subject_a', new StreamBusMessage($msg, null, 'iid-2'), 'test-producer');
+        $this->assertNotSame($id1, $id2);
+        $this->assertSame(2, $this->info->getStreamLength('subject_a'));
+    }
+
+    public function testAddIdmpExplicitMissingIid(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 100,
+            idmpMode: IdmpMode::Explicit,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkIdmpSupport()) {
+            $this->markTestSkipped('Redis >= 8.6 required for idempotency');
+        }
+
+        $this->expectException(StreamBusException::class);
+        $this->bus->add('subject_a', ['k' => 'v'], 'test-producer');
+    }
+
+    public function testAddIdmpExplicitManyDeduplicates(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 100,
+            idmpMode: IdmpMode::Explicit,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkIdmpSupport()) {
+            $this->markTestSkipped('Redis >= 8.6 required for idempotency');
+        }
+
+        $msgs = [
+            new StreamBusMessage(['k' => 'v1'], null, 'iid-a'),
+            new StreamBusMessage(['k' => 'v2'], null, 'iid-b'),
+        ];
+        $ids1 = $this->bus->addMany('subject_a', $msgs, 'test-producer');
+        $ids2 = $this->bus->addMany('subject_a', $msgs, 'test-producer');
+        $this->assertSame($ids1, $ids2);
+        $this->assertSame(2, $this->info->getStreamLength('subject_a'));
+    }
+
+    public function testAddStreamBusMessageAutoDeduplicates(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 100,
+            idmpMode: IdmpMode::Auto,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkIdmpSupport()) {
+            $this->markTestSkipped('Redis >= 8.6 required for idempotency');
+        }
+
+        $msg = ['k' => 'v'];
+        $id1 = $this->bus->add('subject_a', new StreamBusMessage($msg, null, ''), 'test-producer');
+        $id2 = $this->bus->add('subject_a', new StreamBusMessage($msg, null, ''), 'test-producer');
+        $this->assertSame($id1, $id2);
+        $this->assertSame(1, $this->info->getStreamLength('subject_a'));
+    }
+
+    public function testAddStreamBusMessageExplicitDeduplicates(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 100,
+            idmpMode: IdmpMode::Explicit,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkIdmpSupport()) {
+            $this->markTestSkipped('Redis >= 8.6 required for idempotency');
+        }
+
+        $iid = 'msg-iid-1';
+        $id1 = $this->bus->add('subject_a', new StreamBusMessage(['k' => 'v'], null, $iid), 'test-producer');
+        $id2 = $this->bus->add('subject_a', new StreamBusMessage(['k' => 'v'], null, $iid), 'test-producer');
+        $this->assertSame($id1, $id2);
+        $this->assertSame(1, $this->info->getStreamLength('subject_a'));
+    }
+
+    public function testAddStreamBusMessageExplicitManyDeduplicates(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 60,
+            maxSize: 100,
+            idmpMode: IdmpMode::Explicit,
+        );
+        $this->initWith(__FUNCTION__, $settings);
+
+        if (!$this->bus->checkIdmpSupport()) {
+            $this->markTestSkipped('Redis >= 8.6 required for idempotency');
+        }
+
+        $items = [
+            new StreamBusMessage(['k' => 'v1'], null, 'iid-a'),
+            new StreamBusMessage(['k' => 'v2'], null, 'iid-b'),
+        ];
+        $ids1 = $this->bus->addMany('subject_a', $items, 'test-producer');
+        $ids2 = $this->bus->addMany('subject_a', $items, 'test-producer');
+        $this->assertSame($ids1, $ids2);
+        $this->assertSame(2, $this->info->getStreamLength('subject_a'));
+    }
+
+    public function testAddStreamBusMessageCustomId(): void
+    {
+        $this->initWith(__FUNCTION__, $this->settings);
+
+        $customId = '9999999999999-0';
+        $returned = $this->bus->add('subject_a', new StreamBusMessage(['k' => 'v'], $customId, null));
+        $this->assertSame($customId, $returned);
+        $this->assertSame(1, $this->info->getStreamLength('subject_a'));
+    }
+
+    public function testAddManyStreamBusMessageCustomIds(): void
+    {
+        $this->initWith(__FUNCTION__, $this->settings);
+
+        $items = [
+            new StreamBusMessage(['k' => 'v1'], '9999999999997-0', null),
+            new StreamBusMessage(['k' => 'v2'], '9999999999998-0', null),
+            new StreamBusMessage(['k' => 'v3'], '9999999999999-0', null),
+        ];
+        $ids = $this->bus->addMany('subject_a', $items);
+        $this->assertSame(['9999999999997-0', '9999999999998-0', '9999999999999-0'], $ids);
+        $this->assertSame(3, $this->info->getStreamLength('subject_a'));
     }
 
     #[DataProvider('badSerializersProvider')]

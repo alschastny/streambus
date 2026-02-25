@@ -6,9 +6,9 @@ namespace StreamBus\StreamBus;
 
 interface StreamBusInterface
 {
-    public function add(string $subject, mixed $item): string;
+    public function add(string $subject, mixed $item, string $producerId = ''): string;
 
-    public function addMany(string $subject, array $items): array;
+    public function addMany(string $subject, array $items, string $producerId = ''): array;
 
     public function ack(string $group, string $subject, string ...$ids): int;
 
