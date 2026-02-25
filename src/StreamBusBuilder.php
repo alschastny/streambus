@@ -124,9 +124,9 @@ class StreamBusBuilder
         return new StreamBusInfo($client, 'dlq:' . $this->name);
     }
 
-    public function createProducer(): StreamBusProducer
+    public function createProducer(string $name): StreamBusProducer
     {
-        return new StreamBusProducer($this->createBus());
+        return new StreamBusProducer($name, $this->createBus());
     }
 
     public function createConsumer(string $group, string $consumer, array $subjects = []): StreamBusConsumer

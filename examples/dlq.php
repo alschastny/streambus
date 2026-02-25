@@ -53,7 +53,7 @@ $dlqInfo = $baseBuilder->createDLQBusInfo();
 $builder = $baseBuilder->withSettings($settings)->withDLQ($dlq);
 
 // Produce messages
-$producer = $builder->createProducer();
+$producer = $builder->createProducer('producer');
 $producer->add('users.new', new User(1, 'David'));
 $producer->add('users.new', new User(2, 'Andrew'));
 

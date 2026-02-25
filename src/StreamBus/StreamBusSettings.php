@@ -12,6 +12,8 @@ final readonly class StreamBusSettings
         public int $maxSize = 1000000,
         public bool $exactLimits = false,
         public bool $deleteOnAck = false,
+        // Delete mode (Redis 8.2+)
+        public DeleteMode $deletePolicy = DeleteMode::KeepRef,
 
         // Delivery policy
         public int $maxDelivery = 0,
@@ -20,6 +22,12 @@ final readonly class StreamBusSettings
         public bool $ackExplicit = true,
         public int $ackWaitMs = 30 * 60 * 1000,
         public int $nackDelayMs = 0,
+
+
+        // Idempotency policy (Redis 8.6+)
+        public IdmpMode $idmpMode = IdmpMode::None,
+        public int $idmpDurationSec = 0,      // 0 = server default (XCFGSET IDMP-DURATION)
+        public int $idmpMaxSize = 0,          // 0 = server default (XCFGSET IDMP-MAXSIZE)
 
         // Other
         public int $maxExpiredSubjects = 0,
@@ -54,6 +62,14 @@ final readonly class StreamBusSettings
 
         if ($this->deleteOnAck && !$this->ackExplicit) {
             throw new \InvalidArgumentException('deleteOnAck and ackExplicit can\'t be used together');
+        }
+
+        if ($this->idmpDurationSec < 0) {
+            throw new \InvalidArgumentException('negative idmpDurationSec');
+        }
+
+        if ($this->idmpMaxSize < 0) {
+            throw new \InvalidArgumentException('negative idmpMaxSize');
         }
     }
 }

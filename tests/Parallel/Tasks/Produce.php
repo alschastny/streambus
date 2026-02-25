@@ -12,7 +12,7 @@ class Produce
     public function __invoke(string $name, int $count, int $batch, int $delay, string  ...$subjects)
     {
         $builder = ParallelTestCase::createBuilder($name, $subjects);
-        $producer = $builder->createProducer();
+        $producer = $builder->createProducer('producer');
         $logger = TestFactory::createLogger('producer');
         $logger->info('Start');
         $iterations = $count / $batch;

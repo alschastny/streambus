@@ -46,17 +46,21 @@ Class `StreamBus\StreamBusSettings`
 
 This class defines the settings for the entire message bus and is used during initialization of `StreamBusBuilder` and `StreamBus`.
 
-| Key                | Description                                                                                 | Default          |
-|--------------------|---------------------------------------------------------------------------------------------|------------------|
-| minTTLSec          | Minimum message TTL in stream                                                               | `86400`          |
-| maxSize            | Maximum messages stored per subject                                                         | `1000000`        |
-| exactLimits        | Apply exact limits [detail](https://redis.io/docs/latest/commands/xadd/#capped-streams)     | `false`          |
-| deleteOnAck        | Delete message from bus with ACK operation                                                  | `false`          |
-| maxDelivery        | Maximum attempts to deliver a message. `0` by default means no limit                        | `0`              |
-| ackExplicit        | Should client acknowledge each message it reads                                             | `true`           |
-| ackWaitMs          | Maximum time to process message, after which it will be redelivered                         | `30 * 60 * 1000` |
-| nackDelayMs        | Time to delay next delivery message attempt                                                 | `0`              |
-| maxExpiredSubjects | Maximum number of subjects to read expired messages per call. `0` by default means no limit | `0`              |
+| Key                | Description                                                                                                   | Default               |
+|--------------------|---------------------------------------------------------------------------------------------------------------|-----------------------|
+| minTTLSec          | Minimum message TTL in stream                                                                                 | `86400`               |
+| maxSize            | Maximum messages stored per subject                                                                           | `1000000`             |
+| exactLimits        | Apply exact limits [detail](https://redis.io/docs/latest/commands/xadd/#capped-streams)                       | `false`               |
+| deleteOnAck        | Delete message from stream on ACK                                                                             | `false`               |
+| deletePolicy       | How entries are removed when trimmed or acked with `deleteOnAck`. `KeepRef` / `DelRef` / `Acked` (Redis 8.2+) | `DeleteMode::KeepRef` |
+| maxDelivery        | Maximum delivery attempts per message. `0` means no limit                                                     | `0`                   |
+| ackExplicit        | Require explicit ACK from consumers                                                                           | `true`                |
+| ackWaitMs          | Maximum time to process a message before it is redelivered                                                    | `30 * 60 * 1000`      |
+| nackDelayMs        | Minimum delay before a NACKed message is redelivered                                                          | `0`                   |
+| idmpMode           | Idempotent publishing mode. `None` / `Auto` / `Explicit` (Redis 8.6+)                                         | `IdmpMode::None`      |
+| idmpDurationSec    | How long idempotency keys are retained. `0` uses the server default                                           | `0`                   |
+| idmpMaxSize        | Maximum number of idempotency keys retained per stream. `0` uses the server default                           | `0`                   |
+| maxExpiredSubjects | Maximum subjects scanned for expired messages per call. `0` means no limit                                    | `0`                   |
 
 **Example**
 
@@ -94,7 +98,7 @@ $builder = StreamBusBuilder::create('bus_name')
     ->withSettings(new StreamBusSettings())
     ->withSerializers($serializers);
 
-$producer = $builder->createProducer();
+$producer = $builder->createProducer('producer');
 $producer->add('users.new', ['id' => 1, 'name' => 'David']);
 $producer->add('users.new', ['id' => 2, 'name' => 'Andrew']);
 $producer->add('products.new', ['id' => 1, 'product' => 'guitar']);
