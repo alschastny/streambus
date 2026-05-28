@@ -39,6 +39,7 @@ jobs:
           - '8.2'
           - '8.4'
           - '8.6'
+          - '8.8'
 
     steps:
       - name: Checkout code

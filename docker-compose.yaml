@@ -23,6 +23,10 @@ services:
     image: redis:8.6-alpine
     ports:
       - "6386:6379"
+  redis_88:
+    image: redis:8.8-alpine
+    ports:
+      - "6388:6379"
   valkey:
     image: valkey/valkey
     ports:

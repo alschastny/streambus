@@ -4,7 +4,7 @@ CS_FIXER  := vendor/bin/php-cs-fixer
 
 .PHONY: up down psalm style style-fix \
         test test-benchmark test-parallel test-matrix \
-        test-7.2 test-7.4 test-8.0 test-8.2 test-8.4 test-8.6
+        test-7.2 test-7.4 test-8.0 test-8.2 test-8.4 test-8.6 test-8.8
 
 up:
 	docker compose up -d
@@ -23,18 +23,18 @@ style-fix:
 
 # Run tests against Redis 8.6 with coverage (RESP2) then without (RESP3)
 test:
-	REDIS_HOST=127.0.0.1 REDIS_PORT=6386 REDIS_RESP_VERSION=2 XDEBUG_MODE=coverage \
+	REDIS_HOST=127.0.0.1 REDIS_PORT=6388 REDIS_RESP_VERSION=2 XDEBUG_MODE=coverage \
 		$(PHPUNIT) --testsuite main --coverage-html ./html-coverage
-	REDIS_HOST=127.0.0.1 REDIS_PORT=6386 REDIS_RESP_VERSION=3 \
+	REDIS_HOST=127.0.0.1 REDIS_PORT=6388 REDIS_RESP_VERSION=3 \
 		$(PHPUNIT) --testsuite main
 
 test-benchmark:
-	REDIS_HOST=127.0.0.1 REDIS_PORT=6386 $(PHPUNIT) --testsuite benchmark
+	REDIS_HOST=127.0.0.1 REDIS_PORT=6388 $(PHPUNIT) --testsuite benchmark
 
 test-parallel:
-	REDIS_HOST=127.0.0.1 REDIS_PORT=6386 $(PHPUNIT) --testsuite parallel
+	REDIS_HOST=127.0.0.1 REDIS_PORT=6388 $(PHPUNIT) --testsuite parallel
 
-test-matrix: test-7.2 test-7.4 test-8.0 test-8.2 test-8.4 test-8.6
+test-matrix: test-7.2 test-7.4 test-8.0 test-8.2 test-8.4 test-8.6 test-8.8
 
 # Per-version targets — run RESP2 then RESP3 against the matching container port
 define test_redis
@@ -60,3 +60,6 @@ test-8.4:
 
 test-8.6:
 	$(call test_redis,8.6,6386)
+
+test-8.8:
+	$(call test_redis,8.8,6388)
