@@ -13,6 +13,7 @@ use StreamBus\StreamBusBuilder;
 use StreamBus\TestFactory;
 
 #[CoversClass(StreamBus::class)]
+#[CoversClass(StreamBusMessage::class)]
 class StreamBusTest extends TestCase
 {
     private Client $client;
@@ -967,6 +968,29 @@ class StreamBusTest extends TestCase
             'bad class' => [['subject_a' => new \stdClass()]],
             'bad subject' => [['subject~-=' => new StreamBusJsonSerializer()]],
         ];
+    }
+
+    public function testDefaultSerializer(): void
+    {
+        $bus = StreamBusBuilder::create('test')
+            ->withClient($this->client)
+            ->withSettings($this->settings)
+            ->withSerializers(['subject_a' => new StreamBusJsonSerializer()])
+            ->withDefaultSerializer(new StreamBusJsonSerializer())
+            ->withSubjects(['subject_a', 'subject_x'])
+            ->createBus();
+        $bus->createGroup('group1');
+
+        $idA = $bus->add('subject_a', ['k' => 'a']);
+        $idX = $bus->add('subject_x', ['k' => 'x']);
+
+        $this->assertSame(
+            ['subject_a' => [$idA => ['k' => 'a']], 'subject_x' => [$idX => ['k' => 'x']]],
+            $bus->readNew('group1', 'consumer1', 10),
+        );
+
+        $this->expectException(StreamBusException::class);
+        $bus->add('subject_not_declared', ['k' => 'v']);
     }
 
     private function makeMessages(int $count): array

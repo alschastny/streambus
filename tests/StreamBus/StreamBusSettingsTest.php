@@ -31,4 +31,32 @@ class StreamBusSettingsTest extends TestCase
             'negative idmpMaxSize' => [['idmpMaxSize' => -1]],
         ];
     }
+
+    public function testArrayRoundTrip(): void
+    {
+        $settings = new StreamBusSettings(
+            minTTLSec: 120,
+            maxSize: 500,
+            exactLimits: true,
+            deleteOnAck: true,
+            deletePolicy: DeleteMode::Acked,
+            maxDelivery: 7,
+            ackExplicit: true,
+            ackWaitMs: 90000,
+            nackDelayMs: 1500,
+            idmpMode: IdmpMode::Explicit,
+            idmpDurationSec: 3600,
+            idmpMaxSize: 1000,
+            maxExpiredSubjects: 4,
+        );
+
+        $restored = StreamBusSettings::fromArray($settings->toArray());
+
+        $this->assertEquals($settings, $restored);
+    }
+
+    public function testFromArrayUsesDefaultsForMissingFields(): void
+    {
+        $this->assertEquals(new StreamBusSettings(), StreamBusSettings::fromArray([]));
+    }
 }

@@ -10,16 +10,20 @@ use StreamBus\Consumer\StreamBusOrderedConsumer;
 use StreamBus\Consumer\StreamBusOrderedStrictConsumer;
 use StreamBus\Processor\StreamBusProcessor;
 use StreamBus\Producer\StreamBusProducer;
+use StreamBus\Serializer\StreamBusSerializerInterface;
 use StreamBus\StreamBus\StreamBus;
 use StreamBus\StreamBus\StreamBusInfo;
 use StreamBus\StreamBus\StreamBusInterface;
 use StreamBus\StreamBus\StreamBusSettings;
+use StreamBus\StreamBus\StreamBusSettingsStore;
 
 class StreamBusBuilder
 {
     protected ?StreamBusSettings $settings = null;
+    protected bool $remoteSettings = false;
     protected ?Client $client = null;
     protected array $serializers = [];
+    protected ?StreamBusSerializerInterface $defaultSerializer = null;
     protected array $subjects = [];
 
     protected ?StreamBusInterface $dlq = null;
@@ -42,6 +46,13 @@ class StreamBusBuilder
         return $builder;
     }
 
+    public function withRemoteSettings(): static
+    {
+        $builder = clone $this;
+        $builder->remoteSettings = true;
+        return $builder;
+    }
+
     public function withClient(Client $client): static
     {
         $builder = clone $this;
@@ -53,6 +64,13 @@ class StreamBusBuilder
     {
         $builder = clone $this;
         $builder->serializers = $serializers;
+        return $builder;
+    }
+
+    public function withDefaultSerializer(StreamBusSerializerInterface $serializer): static
+    {
+        $builder = clone $this;
+        $builder->defaultSerializer = $serializer;
         return $builder;
     }
 
@@ -77,12 +95,22 @@ class StreamBusBuilder
         return $builder;
     }
 
+    protected function getSettings(): StreamBusSettings
+    {
+        if ($this->settings === null && $this->remoteSettings) {
+            $client = $this->client ?? throw new \InvalidArgumentException('client is not defined');
+            $this->settings = (new StreamBusSettingsStore($client, $this->name))->load();
+        }
+
+        return $this->settings ?? throw new \InvalidArgumentException('settings is not defined');
+    }
+
     public function createBus(): StreamBus
     {
         return (new StreamBus(
             $this->name,
             $this->client ?? throw new \InvalidArgumentException('client is not defined'),
-            $this->settings ?? throw new \InvalidArgumentException('settings is not defined'),
+            $this->getSettings(),
             $this->getBusSerializers() ?: throw new \InvalidArgumentException('serializers are empty'),
         ))
             ->setDeadLetterQueue($this->dlq)
@@ -94,22 +122,30 @@ class StreamBusBuilder
         return (new StreamBus(
             'dlq:' . $this->name,
             $this->client ?? throw new \InvalidArgumentException('client is not defined'),
-            $this->settings ?? throw new \InvalidArgumentException('settings is not defined'),
+            $this->getSettings(),
             $this->getBusSerializers() ?: throw new \InvalidArgumentException('serializers are empty'),
         ));
     }
 
     protected function getBusSerializers(): array
     {
-        if (!$this->subjects) {
-            return $this->serializers;
+        $subjects = $this->subjects ?: array_keys($this->serializers);
+
+        $resolved = [];
+        $notFound = [];
+        foreach ($subjects as $subject) {
+            if ($serializer = $this->serializers[$subject] ?? $this->defaultSerializer) {
+                $resolved[$subject] = $serializer;
+                continue;
+            }
+            $notFound[] = $subject;
         }
 
-        if ($notFound = array_diff_key(array_flip($this->subjects), $this->serializers)) {
-            throw new \InvalidArgumentException('serializers are not defined for the following subjects: ' . implode(', ', array_keys($notFound)));
+        if ($notFound) {
+            throw new \InvalidArgumentException('serializers are not defined for the following subjects: ' . implode(', ', $notFound));
         }
 
-        return array_intersect_key($this->serializers, array_flip($this->subjects));
+        return $resolved;
     }
 
     public function createBusInfo(): StreamBusInfo
@@ -138,7 +174,7 @@ class StreamBusBuilder
     public function createProcessor(string $group, string $consumer, array $handlers): StreamBusProcessor
     {
         $busConsumer = $this->createConsumer($group, $consumer, array_keys($handlers));
-        $settings = $this->settings ?? throw new \InvalidArgumentException('settings is not defined');
+        $settings = $this->getSettings();
         return (new StreamBusProcessor($busConsumer))
             ->setHandlers($handlers)
             ->setAckMode($settings->ackExplicit, $settings->ackExplicit);
@@ -153,7 +189,7 @@ class StreamBusBuilder
     public function createOrderedProcessor(string $group, array $handlers): StreamBusProcessor
     {
         $busConsumer = $this->createOrderedConsumer($group, array_keys($handlers));
-        $settings = $this->settings ?? throw new \InvalidArgumentException('settings is not defined');
+        $settings = $this->getSettings();
         return (new StreamBusProcessor($busConsumer))
             ->setHandlers($handlers)
             ->setAckMode($settings->ackExplicit, false);
@@ -168,7 +204,7 @@ class StreamBusBuilder
     public function createOrderedStrictProcessor(string $group, array $handlers): StreamBusProcessor
     {
         $busConsumer = $this->createOrderedStrictConsumer($group, array_keys($handlers));
-        $settings = $this->settings ?? throw new \InvalidArgumentException('settings is not defined');
+        $settings = $this->getSettings();
         return (new StreamBusProcessor($busConsumer))
             ->setHandlers($handlers)
             ->setAckMode($settings->ackExplicit, false);

@@ -6,6 +6,8 @@ namespace StreamBus\StreamBus;
 
 final readonly class StreamBusSettings
 {
+    public const SCHEMA_VERSION = 1;
+
     public function __construct(
         // Retention policy
         public int $minTTLSec = 86400,
@@ -71,5 +73,43 @@ final readonly class StreamBusSettings
         if ($this->idmpMaxSize < 0) {
             throw new \InvalidArgumentException('negative idmpMaxSize');
         }
+    }
+
+    public function toArray(): array
+    {
+        return [
+            'min_ttl_ns' => $this->minTTLSec * 1_000_000_000,
+            'max_size' => $this->maxSize,
+            'exact_limits' => $this->exactLimits,
+            'delete_on_ack' => $this->deleteOnAck,
+            'delete_policy' => $this->deletePolicy->value,
+            'max_delivery' => $this->maxDelivery,
+            'ack_explicit' => $this->ackExplicit,
+            'ack_wait_ns' => $this->ackWaitMs * 1_000_000,
+            'nack_delay_ns' => $this->nackDelayMs * 1_000_000,
+            'idmp_mode' => $this->idmpMode->value,
+            'idmp_duration_sec' => $this->idmpDurationSec,
+            'idmp_max_size' => $this->idmpMaxSize,
+            'max_expired_subjects' => $this->maxExpiredSubjects,
+        ];
+    }
+
+    public static function fromArray(array $data): self
+    {
+        return new self(
+            minTTLSec: isset($data['min_ttl_ns']) ? (int) ($data['min_ttl_ns'] / 1_000_000_000) : 86400,
+            maxSize: (int) ($data['max_size'] ?? 1000000),
+            exactLimits: (bool) ($data['exact_limits'] ?? false),
+            deleteOnAck: (bool) ($data['delete_on_ack'] ?? false),
+            deletePolicy: DeleteMode::from((string) ($data['delete_policy'] ?? DeleteMode::KeepRef->value)),
+            maxDelivery: (int) ($data['max_delivery'] ?? 0),
+            ackExplicit: (bool) ($data['ack_explicit'] ?? true),
+            ackWaitMs: isset($data['ack_wait_ns']) ? (int) ($data['ack_wait_ns'] / 1_000_000) : 30 * 60 * 1000,
+            nackDelayMs: isset($data['nack_delay_ns']) ? (int) ($data['nack_delay_ns'] / 1_000_000) : 0,
+            idmpMode: IdmpMode::from((string) ($data['idmp_mode'] ?? IdmpMode::None->value)),
+            idmpDurationSec: (int) ($data['idmp_duration_sec'] ?? 0),
+            idmpMaxSize: (int) ($data['idmp_max_size'] ?? 0),
+            maxExpiredSubjects: (int) ($data['max_expired_subjects'] ?? 0),
+        );
     }
 }

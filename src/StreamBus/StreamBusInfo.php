@@ -24,8 +24,14 @@ final class StreamBusInfo implements StreamBusInfoInterface
 
     public function getSubjects(): array
     {
-        $subjectKeys = $this->client->keys($this->streamKeysPrefix . '*');
-        $subjects = array_map(fn(string $subjectKey): string => substr($subjectKey, strlen($this->streamKeysPrefix)), $subjectKeys);
+        $prefixLen = strlen($this->streamKeysPrefix);
+        $subjects = [];
+        foreach ($this->client->keys($this->streamKeysPrefix . '*') as $key) {
+            $subject = substr($key, $prefixLen);
+            if (preg_match('/^[\w.-]+$/', $subject)) {
+                $subjects[] = $subject;
+            }
+        }
         sort($subjects);
         return $subjects;
     }

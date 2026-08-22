@@ -48,6 +48,13 @@ class StreamBusInfoTest extends TestCase
         $this->assertSame(['subject_a', 'subject_b'], $this->info->getSubjects());
     }
 
+    public function testGetSubjectsExcludesSettingsKey(): void
+    {
+        $this->bus->createGroup('group1');
+        (new StreamBusSettingsStore(TestFactory::createClient(), 'test'))->save(new StreamBusSettings());
+        $this->assertSame(['subject_a', 'subject_b'], $this->info->getSubjects());
+    }
+
     public function testGetGroups(): void
     {
         $this->bus->createGroup('group1');

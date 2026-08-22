@@ -22,6 +22,7 @@ class StreamBusBuilderTest extends TestCase
         $builder = StreamBusBuilder::create('test')
             ->withClient(TestFactory::createClient())
             ->withSettings(new StreamBusSettings())
+            ->withRemoteSettings()
             ->withSerializers([
                 'subject_a' => new StreamBusJsonSerializer(),
                 'subject_b' => new StreamBusJsonSerializer(),
@@ -64,6 +65,11 @@ class StreamBusBuilderTest extends TestCase
                 'subject_c' => fn(string $type, string $id, mixed $msg) => true,
             ],
         ));
+
+        $defaultBuilder = $builder->withDefaultSerializer(new StreamBusJsonSerializer());
+        $this->assertInstanceOf(StreamBus::class, $defaultBuilder->withSubjects(['subject_a', 'subject_x'])->createBus());
+        $this->assertInstanceOf(StreamBusConsumer::class, $defaultBuilder->createConsumer('group', 'consumer', ['subject_a', 'subject_x']));
+
         $this->expectException(\InvalidArgumentException::class);
         $this->assertInstanceOf(StreamBusProcessor::class, $builder->createOrderedStrictProcessor(
             'group',

@@ -1,5 +1,10 @@
 # Changelog
 
+### v0.3.0
+
+- **Shared settings in Redis** — `StreamBusSettingsStore` reads/writes a bus's `StreamBusSettings` in the same Redis instance that backs the bus, so every producer/consumer (in any process or language) can share one source of truth.
+- **Default serializer** — `StreamBusBuilder::withDefaultSerializer()` registers an optional serializer used for any subject that has no serializer of its own in `withSerializers()`. Subjects still have to be enumerated (via `withSerializers()` keys or `withSubjects()`).
+
 ## v0.2.1
 
 ### Fixed
